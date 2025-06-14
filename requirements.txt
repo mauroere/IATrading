@@ -4,7 +4,7 @@ numpy==1.26.4
 plotly==5.19.0
 pyyaml==6.0.1
 ccxt==4.2.15
-ta-lib==0.4.28
+ta==0.11.0
 scikit-learn==1.4.2
 tensorflow==2.15.0
 python-telegram-bot==20.8

@@ -4,7 +4,7 @@ from typing import Dict, List, Tuple
 import logging
 import requests
 from datetime import datetime, timedelta
-import talib
+import ta  # Usar la librería ta en vez de talib
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 import ccxt
@@ -66,22 +66,25 @@ class MarketAnalysis:
         """Realiza análisis técnico completo"""
         try:
             # Tendencia
-            df['sma_20'] = talib.SMA(df['close'], timeperiod=20)
-            df['sma_50'] = talib.SMA(df['close'], timeperiod=50)
-            df['sma_200'] = talib.SMA(df['close'], timeperiod=200)
+            df['sma_20'] = ta.trend.sma_indicator(df['close'], window=20)
+            df['sma_50'] = ta.trend.sma_indicator(df['close'], window=50)
+            df['sma_200'] = ta.trend.sma_indicator(df['close'], window=200)
             
             # Momentum
-            df['rsi'] = talib.RSI(df['close'], timeperiod=14)
-            df['macd'], df['macd_signal'], _ = talib.MACD(df['close'])
+            df['rsi'] = ta.momentum.rsi(df['close'], window=14)
+            macd = ta.trend.MACD(df['close'])
+            df['macd'] = macd.macd()
+            df['macd_signal'] = macd.macd_signal()
             
             # Volatilidad
-            df['atr'] = talib.ATR(df['high'], df['low'], df['close'], timeperiod=14)
-            df['bb_upper'], df['bb_middle'], df['bb_lower'] = talib.BBANDS(df['close'])
+            atr = ta.volatility.AverageTrueRange(df['high'], df['low'], df['close'], window=14)
+            df['atr'] = atr.average_true_range()
+            bb = ta.volatility.BollingerBands(df['close'])
+            df['bb_upper'] = bb.bollinger_hband()
+            df['bb_middle'] = bb.bollinger_mavg()
+            df['bb_lower'] = bb.bollinger_lband()
             
             # Patrones
-            df['doji'] = talib.CDLDOJI(df['open'], df['high'], df['low'], df['close'])
-            df['engulfing'] = talib.CDLENGULFING(df['open'], df['high'], df['low'], df['close'])
-            
             # Determinar condiciones
             trend = 'bullish' if df['close'].iloc[-1] > df['sma_200'].iloc[-1] else 'bearish'
             momentum = 'strong' if df['rsi'].iloc[-1] > 70 or df['rsi'].iloc[-1] < 30 else 'neutral'
@@ -90,11 +93,7 @@ class MarketAnalysis:
             return {
                 'trend': trend,
                 'momentum': momentum,
-                'volatility': volatility,
-                'patterns': {
-                    'doji': bool(df['doji'].iloc[-1]),
-                    'engulfing': bool(df['engulfing'].iloc[-1])
-                }
+                'volatility': volatility
             }
         except Exception as e:
             self.logger.error(f"Error en análisis técnico: {str(e)}")
@@ -108,10 +107,12 @@ class MarketAnalysis:
             df['relative_volume'] = df['volume'] / df['volume_ma']
             
             # OBV
-            df['obv'] = talib.OBV(df['close'], df['volume'])
+            obv = ta.volume.OnBalanceVolumeIndicator(df['close'], df['volume'])
+            df['obv'] = obv.on_balance_volume()
             
             # Chaikin Money Flow
-            df['cmf'] = talib.ADOSC(df['high'], df['low'], df['close'], df['volume'])
+            cmf = ta.volume.ChaikinMoneyFlowIndicator(df['high'], df['low'], df['close'], df['volume'])
+            df['cmf'] = cmf.chaikin_money_flow()
             
             # Análisis de divergencia
             price_high = df['close'].rolling(window=20).max()
