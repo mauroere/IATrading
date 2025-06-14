@@ -6,8 +6,8 @@ async def test_telegram_connection():
     """Prueba la conexión con Telegram y envía un mensaje de prueba."""
     try:
         # Credenciales de Telegram
-        bot_token = "7287954720:AAHOGOg8HySy6XExLxsBEWSdnQ9GcuPRWUI"
-        chat_id = "7955937529"
+        bot_token = "xxxxxxxxxx"
+        chat_id = "xxxxxxxxx"
         
         # Crear instancia del bot
         bot = Bot(token=bot_token)
