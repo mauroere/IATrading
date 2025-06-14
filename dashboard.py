@@ -8,20 +8,27 @@ import yaml
 import json
 import logging
 from typing import Dict, List, Tuple
-
-# Importar componentes del sistema
-from profit_calculator import ProfitCalculator
+import ccxt
+import os
+from config import TRADING_CONFIG, API_CONFIG, INDICATORS_CONFIG
+from database import DatabaseHandler
+from notifications import TelegramNotifier
 from indicators import TechnicalIndicators
-from risk_manager import RiskManager
-from ml_model import MLModel
 from market_analysis import MarketAnalysis
+from ml_model import MLModel
 from optimizer import BayesianOptimizer
 from backtester import Backtester
 from monitor import SystemMonitor
 
+# Importar componentes del sistema
+from profit_calculator import ProfitCalculator
+
 class TradingDashboard:
     def __init__(self):
         """Inicializa el dashboard y sus componentes."""
+        self.config = TRADING_CONFIG
+        self.api_config = API_CONFIG
+        self.indicators_config = INDICATORS_CONFIG
         self.setup_logging()
         self.load_config()
         self.initialize_components()
@@ -29,14 +36,11 @@ class TradingDashboard:
     def setup_logging(self):
         """Configura el sistema de logging."""
         logging.basicConfig(
+            filename='dashboard.log',
             level=logging.INFO,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.FileHandler('dashboard.log'),
-                logging.StreamHandler()
-            ]
+            format='%(asctime)s - %(levelname)s - %(message)s'
         )
-        self.logger = logging.getLogger('TradingDashboard')
+        self.logger = logging.getLogger(__name__)
     
     def load_config(self):
         """Carga la configuración del sistema."""
@@ -50,11 +54,30 @@ class TradingDashboard:
     def initialize_components(self):
         """Inicializa todos los componentes del sistema."""
         try:
+            # Initialize exchange
+            self.exchange = ccxt.binance({
+                'apiKey': self.api_config['binance_api_key'],
+                'secret': self.api_config['binance_api_secret'],
+                'enableRateLimit': True
+            })
+            
+            # Initialize database
+            self.db = DatabaseHandler()
+            
+            # Initialize notifier
+            self.notifier = TelegramNotifier()
+            
+            # Initialize indicators with config
+            self.indicators = TechnicalIndicators(self.indicators_config)
+            
+            # Initialize market analysis
+            self.market_analysis = MarketAnalysis(self.config)
+            
+            # Initialize ML model
+            self.ml_model = MLModel(self.config)
+            
             self.profit_calculator = ProfitCalculator()
-            self.indicators = TechnicalIndicators()
             self.risk_manager = RiskManager()
-            self.ml_model = MLModel()
-            self.market_analysis = MarketAnalysis()
             self.optimizer = BayesianOptimizer()
             self.backtester = Backtester()
             self.monitor = SystemMonitor()
@@ -78,7 +101,8 @@ class TradingDashboard:
             "Seleccionar página",
             ["Dashboard", "Análisis Técnico", "Gestión de Riesgo", 
              "Machine Learning", "Optimización", "Backtesting", 
-             "Calculadora de Ganancias", "Monitoreo"]
+             "Calculadora de Ganancias", "Monitoreo", "Análisis de Mercado", 
+             "Predicciones ML", "Historial de Trading", "Estado del Sistema"]
         )
         
         if page == "Dashboard":
@@ -97,6 +121,14 @@ class TradingDashboard:
             self.show_profit_calculator()
         elif page == "Monitoreo":
             self.show_monitoring()
+        elif page == "Análisis de Mercado":
+            self.show_market_analysis()
+        elif page == "Predicciones ML":
+            self.show_ml_predictions()
+        elif page == "Historial de Trading":
+            self.show_trading_history()
+        elif page == "Estado del Sistema":
+            self.show_system_status()
     
     def show_dashboard(self):
         """Muestra el dashboard principal."""
@@ -157,7 +189,7 @@ class TradingDashboard:
             )
         
         # Calcular indicadores
-        indicators = self.indicators.calculate_all(symbol, timeframe)
+        indicators = self.indicators.calculate_all_indicators(self._get_market_data(symbol, timeframe))
         
         # Mostrar gráfico
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True)
@@ -199,7 +231,7 @@ class TradingDashboard:
         
         # Señales de trading
         st.subheader("Señales de Trading")
-        signals = self.indicators.get_signals(indicators)
+        signals, signal_strength = self.indicators.get_trading_signals(indicators)
         st.dataframe(signals)
     
     def show_risk_management(self):
@@ -594,6 +626,122 @@ class TradingDashboard:
         st.subheader("Alertas del Sistema")
         alerts = self.monitor.get_alerts()
         st.dataframe(alerts)
+
+    def show_market_analysis(self):
+        """Muestra el análisis de mercado"""
+        st.header("Análisis de Mercado")
+        
+        symbol = st.selectbox(
+            "Par de Trading",
+            self.config['trading_pairs'],
+            key="market_analysis"
+        )
+        
+        analysis = self.market_analysis.analyze_market_conditions(symbol)
+        
+        # Mostrar resultados
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("Análisis Técnico")
+            st.write(analysis['technical'])
+            
+            st.subheader("Análisis de Volumen")
+            st.write(analysis['volume'])
+            
+        with col2:
+            st.subheader("Análisis de Sentimiento")
+            st.write(analysis['sentiment'])
+            
+            st.subheader("Flujo de Órdenes")
+            st.write(analysis['order_flow'])
+            
+        st.subheader("Condición General del Mercado")
+        st.write(f"Estado: {analysis['market_condition']}")
+        
+    def show_ml_predictions(self):
+        """Muestra predicciones del modelo ML"""
+        st.header("Predicciones ML")
+        
+        symbol = st.selectbox(
+            "Par de Trading",
+            self.config['trading_pairs'],
+            key="ml_predictions"
+        )
+        
+        # Obtener datos
+        df = self._get_market_data(symbol, '1h')
+        
+        # Preparar características
+        features = self.ml_model.prepare_features(df)
+        
+        # Obtener predicción
+        prediction = self.ml_model.predict(features)
+        
+        # Mostrar resultados
+        st.subheader("Predicción")
+        st.write(f"Señal: {'Compra' if prediction == 1 else 'Venta' if prediction == -1 else 'Neutral'}")
+        
+        # Mostrar probabilidades
+        probabilities = self.ml_model.predict_proba(features)
+        st.write("Probabilidades:", probabilities)
+        
+    def show_trading_history(self):
+        """Muestra historial de trading"""
+        st.header("Historial de Trading")
+        
+        # Obtener trades
+        trades = self.db.get_trades()
+        
+        # Mostrar tabla
+        st.dataframe(trades)
+        
+        # Mostrar estadísticas
+        st.subheader("Estadísticas")
+        stats = self.db.get_daily_stats()
+        st.dataframe(stats)
+        
+    def show_system_status(self):
+        """Muestra estado del sistema"""
+        st.header("Estado del Sistema")
+        
+        # Verificar conexiones
+        st.subheader("Conexiones")
+        self._verify_connections()
+        
+        # Mostrar logs
+        st.subheader("Logs")
+        logs = self.db.get_logs()
+        st.dataframe(logs)
+        
+    def _verify_connections(self):
+        """Verifica conexiones con APIs"""
+        try:
+            # Verificar Binance
+            self.exchange.fetch_ticker(self.config['trading_pairs'][0])
+            st.success("✅ Conexión con Binance establecida")
+        except Exception as e:
+            st.error(f"❌ Error en conexión con Binance: {str(e)}")
+            
+        try:
+            # Verificar Telegram
+            self.notifier.send_test_message()
+            st.success("✅ Conexión con Telegram establecida")
+        except Exception as e:
+            st.error(f"❌ Error en conexión con Telegram: {str(e)}")
+            
+    def _get_market_data(self, symbol: str, timeframe: str) -> pd.DataFrame:
+        """Obtiene datos del mercado"""
+        try:
+            ohlcv = self.exchange.fetch_ohlcv(symbol, timeframe, limit=100)
+            df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+            df.set_index('timestamp', inplace=True)
+            return df
+        except Exception as e:
+            self.logger.error(f"Error getting market data: {str(e)}")
+            st.error(f"Error getting market data: {str(e)}")
+            return pd.DataFrame()
 
 def main():
     dashboard = TradingDashboard()

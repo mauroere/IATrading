@@ -3,18 +3,23 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import logging
-from config import TRADING_CONFIG, API_CONFIG
+from config import TRADING_CONFIG, API_CONFIG, INDICATORS_CONFIG
 from database import DatabaseHandler
 from notifications import TelegramNotifier
 from indicators import TechnicalIndicators
 import xgboost as xgb
 import joblib
 import asyncio
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
+from risk_manager import RiskManager
+from ml_model import MLModel
 
 class TradingBot:
     def __init__(self):
+        """Initialize the trading bot with configuration and components."""
         self.config = TRADING_CONFIG
+        self.api_config = API_CONFIG
+        self.indicators_config = INDICATORS_CONFIG
         self.exchange = ccxt.binance({
             'apiKey': API_CONFIG['binance_api_key'],
             'secret': API_CONFIG['binance_api_secret'],
@@ -22,17 +27,21 @@ class TradingBot:
         })
         self.db = DatabaseHandler()
         self.notifier = TelegramNotifier()
-        self.indicators = TechnicalIndicators()
+        self.indicators = TechnicalIndicators(INDICATORS_CONFIG)
         self.model = self._load_model()
+        self.risk_manager = RiskManager()
+        self.ml_model = MLModel()
         self.setup_logging()
         self.stop_event = asyncio.Event()
 
     def setup_logging(self):
+        """Configure logging for the trading bot."""
         logging.basicConfig(
             filename='trading_bot.log',
             level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s'
         )
+        self.logger = logging.getLogger(__name__)
 
     def _load_model(self):
         try:
@@ -78,36 +87,90 @@ class TradingBot:
             logging.error(f"Error preparing features: {str(e)}")
             return pd.DataFrame()
 
-    async def execute_trade(self, side: str, amount: float) -> Optional[Dict[str, Any]]:
+    async def execute_trade(self, symbol: str, side: str, amount: float, price: float) -> Dict:
+        """
+        Execute a trade on the exchange.
+        
+        Args:
+            symbol (str): Trading pair symbol
+            side (str): 'buy' or 'sell'
+            amount (float): Amount to trade
+            price (float): Price to trade at
+            
+        Returns:
+            Dict: Trade execution details
+        """
         try:
-            order = await asyncio.to_thread(
-                self.exchange.create_order,
-                symbol=self.config['symbol'],
-                type='market',
+            # Check risk limits
+            if not self.risk_manager.check_trade_risk(symbol, side, amount, price):
+                self.logger.warning(f"Trade rejected by risk manager: {symbol} {side} {amount} @ {price}")
+                return None
+                
+            # Execute trade
+            order = await self.exchange.create_order(
+                symbol=symbol,
+                type='limit',
                 side=side,
-                amount=amount
+                amount=amount,
+                price=price
             )
             
-            trade_data = {
-                'symbol': self.config['symbol'],
+            # Log trade
+            self.db.log_trade({
+                'symbol': symbol,
                 'side': side,
-                'price': order['price'],
                 'amount': amount,
-                'total': order['cost'],
-                'status': 'completed'
-            }
-            
-            # Log trade in database
-            await asyncio.to_thread(self.db.log_trade, **trade_data)
+                'price': price,
+                'order_id': order['id'],
+                'timestamp': datetime.now().isoformat()
+            })
             
             # Send notification
-            await self.notifier.send_trade_notification(trade_data)
+            await self.notifier.send_trade_notification(order)
             
             return order
+            
         except Exception as e:
-            error_msg = f"Error executing trade: {str(e)}"
-            logging.error(error_msg)
-            await self.notifier.send_error_notification(error_msg)
+            self.logger.error(f"Error executing trade: {str(e)}")
+            await self.notifier.send_error_notification(f"Trade execution error: {str(e)}")
+            return None
+
+    async def analyze_market(self, symbol: str) -> Dict:
+        """
+        Analyze market conditions for a symbol.
+        
+        Args:
+            symbol (str): Trading pair symbol
+            
+        Returns:
+            Dict: Market analysis results
+        """
+        try:
+            # Get market data
+            ohlcv = await self.exchange.fetch_ohlcv(symbol, '1h', limit=100)
+            df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+            df.set_index('timestamp', inplace=True)
+            
+            # Calculate indicators
+            df = self.indicators.calculate_all_indicators(df)
+            
+            # Get trading signals
+            signals, signal_strength = self.indicators.get_trading_signals(df)
+            
+            # Get ML prediction
+            features = self.ml_model.prepare_features(df)
+            prediction = self.ml_model.predict(features)
+            
+            return {
+                'signals': signals,
+                'signal_strength': signal_strength,
+                'ml_prediction': prediction,
+                'indicators': df
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error analyzing market: {str(e)}")
             return None
 
     async def check_emergency_stop(self, current_balance: float, initial_balance: float) -> bool:
@@ -119,6 +182,7 @@ class TradingBot:
         return False
 
     async def run(self):
+        """Main trading loop."""
         try:
             initial_balance = await asyncio.to_thread(
                 lambda: self.exchange.fetch_balance()['USDT']['free']
@@ -170,11 +234,11 @@ class TradingBot:
                     # Execute trade based on prediction
                     if prediction == 1:  # Buy signal
                         amount = (current_balance * self.config['position_size']) / market_data['close'].iloc[-1]
-                        await self.execute_trade('buy', amount)
+                        await self.execute_trade(self.config['symbol'], 'buy', amount, market_data['close'].iloc[-1])
                         daily_trades += 1
                     elif prediction == -1:  # Sell signal
                         amount = (current_balance * self.config['position_size'])
-                        await self.execute_trade('sell', amount)
+                        await self.execute_trade(self.config['symbol'], 'sell', amount, market_data['close'].iloc[-1])
                         daily_trades += 1
 
                     await asyncio.sleep(60)  # Wait before next iteration
@@ -196,4 +260,18 @@ class TradingBot:
         """Stop the trading bot gracefully"""
         self.stop_event.set()
         self.db.close()
-        await self.notifier.stop() 
+        await self.notifier.stop()
+
+def main():
+    """Main entry point for the trading bot."""
+    bot = TradingBot()
+    try:
+        asyncio.run(bot.run())
+    except KeyboardInterrupt:
+        asyncio.run(bot.stop())
+    except Exception as e:
+        logging.error(f"Fatal error: {str(e)}")
+        asyncio.run(bot.stop())
+        
+if __name__ == "__main__":
+    main() 

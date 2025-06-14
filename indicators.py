@@ -1,54 +1,210 @@
 import pandas as pd
 import numpy as np
-import ta
-from config import INDICATORS_CONFIG
-from typing import Dict, List, Tuple
+import talib
 import logging
+from typing import Dict, List, Tuple, Optional
+import warnings
 
 class TechnicalIndicators:
     def __init__(self, config: Dict):
+        """
+        Initialize TechnicalIndicators with configuration.
+        
+        Args:
+            config (Dict): Configuration dictionary containing indicator parameters
+        """
         self.config = config
+        self.setup_logging()
+        
+    def setup_logging(self):
+        """Configure logging for the indicators module"""
         self.logger = logging.getLogger(__name__)
-
-    def calculate_rsi(self, data):
-        return ta.momentum.RSIIndicator(
-            close=data['close'],
-            window=self.config['rsi_period']
-        ).rsi()
-
-    def calculate_macd(self, data):
-        macd = ta.trend.MACD(
-            close=data['close'],
-            window_slow=self.config['macd_slow'],
-            window_fast=self.config['macd_fast'],
-            window_sign=self.config['macd_signal']
-        )
-        return pd.DataFrame({
-            'macd': macd.macd(),
-            'macd_signal': macd.macd_signal(),
-            'macd_diff': macd.macd_diff()
-        })
-
-    def calculate_atr(self, data):
-        return ta.volatility.AverageTrueRange(
-            high=data['high'],
-            low=data['low'],
-            close=data['close'],
-            window=self.config['atr_period']
-        ).average_true_range()
-
-    def calculate_bollinger_bands(self, data, window=20, num_std=2):
-        bb = ta.volatility.BollingerBands(
-            close=data['close'],
-            window=window,
-            window_dev=num_std
-        )
-        return pd.DataFrame({
-            'bb_high': bb.bollinger_hband(),
-            'bb_mid': bb.bollinger_mavg(),
-            'bb_low': bb.bollinger_lband(),
-            'bb_width': bb.bollinger_wband()
-        })
+        
+    def calculate_rsi(self, data: pd.DataFrame, period: int = 14) -> pd.Series:
+        """
+        Calculate Relative Strength Index (RSI)
+        
+        Args:
+            data (pd.DataFrame): Price data with 'close' column
+            period (int): RSI period
+            
+        Returns:
+            pd.Series: RSI values
+        """
+        try:
+            return pd.Series(talib.RSI(data['close'].values, timeperiod=period), index=data.index)
+        except Exception as e:
+            self.logger.error(f"Error calculating RSI: {str(e)}")
+            return pd.Series(index=data.index)
+            
+    def calculate_macd(self, data: pd.DataFrame, fast_period: int = 12, 
+                      slow_period: int = 26, signal_period: int = 9) -> Tuple[pd.Series, pd.Series, pd.Series]:
+        """
+        Calculate MACD (Moving Average Convergence Divergence)
+        
+        Args:
+            data (pd.DataFrame): Price data with 'close' column
+            fast_period (int): Fast period
+            slow_period (int): Slow period
+            signal_period (int): Signal period
+            
+        Returns:
+            Tuple[pd.Series, pd.Series, pd.Series]: MACD line, Signal line, and Histogram
+        """
+        try:
+            macd, signal, hist = talib.MACD(
+                data['close'].values,
+                fastperiod=fast_period,
+                slowperiod=slow_period,
+                signalperiod=signal_period
+            )
+            return (
+                pd.Series(macd, index=data.index),
+                pd.Series(signal, index=data.index),
+                pd.Series(hist, index=data.index)
+            )
+        except Exception as e:
+            self.logger.error(f"Error calculating MACD: {str(e)}")
+            return pd.Series(index=data.index), pd.Series(index=data.index), pd.Series(index=data.index)
+            
+    def calculate_bollinger_bands(self, data: pd.DataFrame, period: int = 20, 
+                                num_std: float = 2.0) -> Tuple[pd.Series, pd.Series, pd.Series]:
+        """
+        Calculate Bollinger Bands
+        
+        Args:
+            data (pd.DataFrame): Price data with 'close' column
+            period (int): Moving average period
+            num_std (float): Number of standard deviations
+            
+        Returns:
+            Tuple[pd.Series, pd.Series, pd.Series]: Upper band, Middle band, Lower band
+        """
+        try:
+            upper, middle, lower = talib.BBANDS(
+                data['close'].values,
+                timeperiod=period,
+                nbdevup=num_std,
+                nbdevdn=num_std
+            )
+            return (
+                pd.Series(upper, index=data.index),
+                pd.Series(middle, index=data.index),
+                pd.Series(lower, index=data.index)
+            )
+        except Exception as e:
+            self.logger.error(f"Error calculating Bollinger Bands: {str(e)}")
+            return pd.Series(index=data.index), pd.Series(index=data.index), pd.Series(index=data.index)
+            
+    def calculate_atr(self, data: pd.DataFrame, period: int = 14) -> pd.Series:
+        """
+        Calculate Average True Range (ATR)
+        
+        Args:
+            data (pd.DataFrame): Price data with 'high', 'low', 'close' columns
+            period (int): ATR period
+            
+        Returns:
+            pd.Series: ATR values
+        """
+        try:
+            return pd.Series(
+                talib.ATR(data['high'].values, data['low'].values, data['close'].values, timeperiod=period),
+                index=data.index
+            )
+        except Exception as e:
+            self.logger.error(f"Error calculating ATR: {str(e)}")
+            return pd.Series(index=data.index)
+            
+    def calculate_all_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Calculate all technical indicators
+        
+        Args:
+            data (pd.DataFrame): Price data with OHLCV columns
+            
+        Returns:
+            pd.DataFrame: Data with all indicators added
+        """
+        try:
+            # Get parameters from config
+            rsi_period = self.config.get('rsi_period', 14)
+            macd_fast = self.config.get('macd_fast', 12)
+            macd_slow = self.config.get('macd_slow', 26)
+            macd_signal = self.config.get('macd_signal', 9)
+            bb_period = self.config.get('bb_period', 20)
+            bb_std = self.config.get('bb_std', 2.0)
+            atr_period = self.config.get('atr_period', 14)
+            
+            # Calculate indicators
+            data['rsi'] = self.calculate_rsi(data, rsi_period)
+            macd, signal, hist = self.calculate_macd(data, macd_fast, macd_slow, macd_signal)
+            data['macd'] = macd
+            data['macd_signal'] = signal
+            data['macd_hist'] = hist
+            
+            bb_upper, bb_middle, bb_lower = self.calculate_bollinger_bands(data, bb_period, bb_std)
+            data['bb_upper'] = bb_upper
+            data['bb_middle'] = bb_middle
+            data['bb_lower'] = bb_lower
+            
+            data['atr'] = self.calculate_atr(data, atr_period)
+            
+            # Add moving averages
+            data['sma_20'] = data['close'].rolling(window=20).mean()
+            data['sma_50'] = data['close'].rolling(window=50).mean()
+            data['sma_200'] = data['close'].rolling(window=200).mean()
+            
+            return data
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating indicators: {str(e)}")
+            return data
+            
+    def get_trading_signals(self, data: pd.DataFrame) -> Tuple[pd.DataFrame, float]:
+        """
+        Generate trading signals based on technical indicators
+        
+        Args:
+            data (pd.DataFrame): Data with calculated indicators
+            
+        Returns:
+            Tuple[pd.DataFrame, float]: DataFrame with signals and overall signal strength
+        """
+        try:
+            signals = pd.DataFrame(index=data.index)
+            
+            # RSI signals
+            signals['rsi_signal'] = 0
+            signals.loc[data['rsi'] < 30, 'rsi_signal'] = 1  # Oversold
+            signals.loc[data['rsi'] > 70, 'rsi_signal'] = -1  # Overbought
+            
+            # MACD signals
+            signals['macd_signal'] = 0
+            signals.loc[data['macd'] > data['macd_signal'], 'macd_signal'] = 1
+            signals.loc[data['macd'] < data['macd_signal'], 'macd_signal'] = -1
+            
+            # Bollinger Bands signals
+            signals['bb_signal'] = 0
+            signals.loc[data['close'] < data['bb_lower'], 'bb_signal'] = 1  # Price below lower band
+            signals.loc[data['close'] > data['bb_upper'], 'bb_signal'] = -1  # Price above upper band
+            
+            # Moving Average signals
+            signals['ma_signal'] = 0
+            signals.loc[data['sma_20'] > data['sma_50'], 'ma_signal'] = 1
+            signals.loc[data['sma_20'] < data['sma_50'], 'ma_signal'] = -1
+            
+            # Calculate overall signal strength
+            signal_strength = signals.mean(axis=1)
+            
+            # Add signal strength to signals DataFrame
+            signals['signal_strength'] = signal_strength
+            
+            return signals, signal_strength.iloc[-1]
+            
+        except Exception as e:
+            self.logger.error(f"Error generating trading signals: {str(e)}")
+            return pd.DataFrame(index=data.index), 0.0
 
     def calculate_stochastic(self, data, k_window=14, d_window=3):
         stoch = ta.momentum.StochasticOscillator(
@@ -88,39 +244,6 @@ class TechnicalIndicators:
             'obv': obv.on_balance_volume(),
             'cmf': cmf.chaikin_money_flow()
         })
-
-    def calculate_all_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Calcula todos los indicadores técnicos"""
-        try:
-            # Indicadores de tendencia
-            df = self.add_moving_averages(df)
-            df = self.add_ichimoku_cloud(df)
-            df = self.add_supertrend(df)
-            
-            # Indicadores de momentum
-            df = self.add_rsi(df)
-            df = self.add_stochastic(df)
-            df = self.add_macd(df)
-            df = self.add_cci(df)
-            
-            # Indicadores de volatilidad
-            df = self.add_bollinger_bands(df)
-            df = self.add_atr(df)
-            df = self.add_keltner_channels(df)
-            
-            # Indicadores de volumen
-            df = self.add_volume_indicators(df)
-            
-            # Indicadores de patrones
-            df = self.add_candlestick_patterns(df)
-            
-            # Limpieza de datos
-            df = df.dropna()
-            
-            return df
-        except Exception as e:
-            self.logger.error(f"Error calculando indicadores: {str(e)}")
-            raise
 
     def add_moving_averages(self, df: pd.DataFrame) -> pd.DataFrame:
         """Añade múltiples medias móviles con diferentes períodos"""
@@ -244,139 +367,6 @@ class TechnicalIndicators:
             )
         
         return df
-
-    def get_trading_signals(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
-        """Genera señales de trading basadas en múltiples indicadores"""
-        signals = pd.DataFrame(index=df.index)
-        signal_strength = {}
-        
-        # Señales de tendencia
-        signals['trend_signal'] = self._get_trend_signals(df)
-        signal_strength['trend'] = self._calculate_signal_strength(signals['trend_signal'])
-        
-        # Señales de momentum
-        signals['momentum_signal'] = self._get_momentum_signals(df)
-        signal_strength['momentum'] = self._calculate_signal_strength(signals['momentum_signal'])
-        
-        # Señales de volatilidad
-        signals['volatility_signal'] = self._get_volatility_signals(df)
-        signal_strength['volatility'] = self._calculate_signal_strength(signals['volatility_signal'])
-        
-        # Señales de volumen
-        signals['volume_signal'] = self._get_volume_signals(df)
-        signal_strength['volume'] = self._calculate_signal_strength(signals['volume_signal'])
-        
-        # Señales de patrones
-        signals['pattern_signal'] = self._get_pattern_signals(df)
-        signal_strength['pattern'] = self._calculate_signal_strength(signals['pattern_signal'])
-        
-        # Señal final combinada
-        signals['final_signal'] = self._combine_signals(signals, signal_strength)
-        
-        return signals, signal_strength
-
-    def _get_trend_signals(self, df: pd.DataFrame) -> pd.Series:
-        """Genera señales basadas en tendencia"""
-        signals = pd.Series(0, index=df.index)
-        
-        # Ichimoku Cloud
-        signals += np.where(df['close'] > df['ichimoku_span_a'], 1, 0)
-        signals += np.where(df['close'] > df['ichimoku_span_b'], 1, 0)
-        signals -= np.where(df['close'] < df['ichimoku_span_a'], 1, 0)
-        signals -= np.where(df['close'] < df['ichimoku_span_b'], 1, 0)
-        
-        # Supertrend
-        signals += np.where(df['supertrend_direction'] == 1, 1, 0)
-        signals -= np.where(df['supertrend_direction'] == -1, 1, 0)
-        
-        # Moving Averages
-        signals += np.where(df['close'] > df['sma_50'], 1, 0)
-        signals += np.where(df['close'] > df['sma_200'], 1, 0)
-        signals -= np.where(df['close'] < df['sma_50'], 1, 0)
-        signals -= np.where(df['close'] < df['sma_200'], 1, 0)
-        
-        return signals
-
-    def _get_momentum_signals(self, df: pd.DataFrame) -> pd.Series:
-        """Genera señales basadas en momentum"""
-        signals = pd.Series(0, index=df.index)
-        
-        # RSI
-        signals += np.where(df['rsi'] < 30, 1, 0)
-        signals -= np.where(df['rsi'] > 70, 1, 0)
-        
-        # Stochastic
-        signals += np.where((df['stoch_k'] < 20) & (df['stoch_d'] < 20), 1, 0)
-        signals -= np.where((df['stoch_k'] > 80) & (df['stoch_d'] > 80), 1, 0)
-        
-        # MACD
-        signals += np.where(df['macd'] > df['macd_signal'], 1, 0)
-        signals -= np.where(df['macd'] < df['macd_signal'], 1, 0)
-        
-        return signals
-
-    def _get_volatility_signals(self, df: pd.DataFrame) -> pd.Series:
-        """Genera señales basadas en volatilidad"""
-        signals = pd.Series(0, index=df.index)
-        
-        # Bollinger Bands
-        signals += np.where(df['close'] < df['bb_low'], 1, 0)
-        signals -= np.where(df['close'] > df['bb_high'], 1, 0)
-        
-        # Keltner Channels
-        signals += np.where(df['close'] < df['kc_lower'], 1, 0)
-        signals -= np.where(df['close'] > df['kc_upper'], 1, 0)
-        
-        return signals
-
-    def _get_volume_signals(self, df: pd.DataFrame) -> pd.Series:
-        """Genera señales basadas en volumen"""
-        signals = pd.Series(0, index=df.index)
-        
-        # VWAP
-        signals += np.where(df['close'] > df['vwap'], 1, 0)
-        signals -= np.where(df['close'] < df['vwap'], 1, 0)
-        
-        # OBV
-        signals += np.where(df['obv'].diff() > 0, 1, 0)
-        signals -= np.where(df['obv'].diff() < 0, 1, 0)
-        
-        # CMF
-        signals += np.where(df['cmf'] > 0, 1, 0)
-        signals -= np.where(df['cmf'] < 0, 1, 0)
-        
-        return signals
-
-    def _get_pattern_signals(self, df: pd.DataFrame) -> pd.Series:
-        """Genera señales basadas en patrones de velas"""
-        signals = pd.Series(0, index=df.index)
-        
-        # Patrones alcistas
-        bullish_patterns = ['cdlhammer', 'cdlmorningstar', 'cdlengulfing', 'cdlharami']
-        for pattern in bullish_patterns:
-            signals += np.where(df[pattern] > 0, 1, 0)
-        
-        # Patrones bajistas
-        bearish_patterns = ['cdlshootingstar', 'cdleveningstar', 'cdlengulfing', 'cdlharami']
-        for pattern in bearish_patterns:
-            signals -= np.where(df[pattern] < 0, 1, 0)
-        
-        return signals
-
-    def _calculate_signal_strength(self, signal: pd.Series) -> float:
-        """Calcula la fuerza de la señal"""
-        return abs(signal.mean())
-
-    def _combine_signals(self, signals: pd.DataFrame, signal_strength: Dict) -> pd.Series:
-        """Combina todas las señales con pesos basados en su fuerza"""
-        total_strength = sum(signal_strength.values())
-        weights = {k: v/total_strength for k, v in signal_strength.items()}
-        
-        final_signal = pd.Series(0, index=signals.index)
-        for signal_type, weight in weights.items():
-            final_signal += signals[f'{signal_type}_signal'] * weight
-        
-        return final_signal
 
     def get_support_resistance(self, data, window=20):
         """Calculate support and resistance levels using multiple methods"""

@@ -22,20 +22,63 @@ TRADING_CONFIG = {
 
 # Technical Indicators Configuration
 INDICATORS_CONFIG = {
+    # RSI
     'rsi_period': 14,
     'rsi_overbought': 70,
     'rsi_oversold': 30,
+    
+    # MACD
     'macd_fast': 12,
     'macd_slow': 26,
     'macd_signal': 9,
-    'atr_period': 14,
+    
+    # Bollinger Bands
     'bb_period': 20,
-    'bb_std': 2,
+    'bb_std': 2.0,
+    
+    # ATR
+    'atr_period': 14,
+    
+    # Moving Averages
+    'sma_periods': [20, 50, 200],
+    'ema_periods': [9, 21, 50, 200],
+    
+    # Stochastic
     'stoch_k_period': 14,
     'stoch_d_period': 3,
+    'stoch_slowing': 3,
+    
+    # Volume Indicators
+    'volume_ma_period': 20,
+    'obv_ma_period': 20,
+    
+    # Ichimoku Cloud
     'ichimoku_tenkan': 9,
     'ichimoku_kijun': 26,
-    'ichimoku_senkou_b': 52,
+    'ichimoku_senkou_span_b': 52,
+    'ichimoku_displacement': 26,
+    
+    # Supertrend
+    'supertrend_period': 10,
+    'supertrend_multiplier': 3.0,
+    
+    # Keltner Channels
+    'kc_period': 20,
+    'kc_multiplier': 2.0,
+    
+    # CCI
+    'cci_period': 20,
+    
+    # Signal Generation
+    'signal_threshold': 0.7,
+    'signal_confirmation_periods': 3,
+    'signal_weights': {
+        'trend': 0.3,
+        'momentum': 0.25,
+        'volatility': 0.2,
+        'volume': 0.15,
+        'pattern': 0.1
+    }
 }
 
 # API Configuration
