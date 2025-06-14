@@ -47,8 +47,14 @@ class TradingDashboard:
         try:
             with open('config.yaml', 'r') as file:
                 self.config = yaml.safe_load(file)
+            # Ensure indicators_config is set from YAML or fallback to INDICATORS_CONFIG
+            if 'indicators_config' in self.config:
+                self.indicators_config = self.config['indicators_config']
+            else:
+                self.indicators_config = INDICATORS_CONFIG
         except Exception as e:
             self.logger.error(f"Error cargando configuración: {e}")
+            self.indicators_config = INDICATORS_CONFIG
             raise
     
     def initialize_components(self):
@@ -67,7 +73,7 @@ class TradingDashboard:
             # Initialize notifier
             self.notifier = TelegramNotifier()
             
-            # Initialize indicators with config
+            # Initialize indicators with config (always pass config)
             self.indicators = TechnicalIndicators(self.indicators_config)
             
             # Initialize market analysis
