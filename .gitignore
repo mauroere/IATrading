@@ -45,8 +45,7 @@ log/
 .env.*
 
 # Config files with sensitive data
-config.yaml
-config.yml
+# config.yaml
 
 # Cache
 .cache/
