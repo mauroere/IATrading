@@ -26,6 +26,26 @@ from optimizer import BayesianOptimizer
 from backtester import Backtester
 from monitor import SystemMonitor
 
+# --- Decorador de reconexión automática ---
+def auto_reconnect(max_retries=5, backoff_factor=2):
+    def decorator(func):
+        def wrapper(self, *args, **kwargs):
+            retries = 0
+            delay = 5
+            while retries < max_retries:
+                try:
+                    return func(self, *args, **kwargs)
+                except Exception as e:
+                    self.logger.error(f"Error de conexión: {str(e)}. Reintentando en {delay}s...")
+                    time.sleep(delay)
+                    retries += 1
+                    delay *= backoff_factor
+            # Si falla tras varios intentos, alerta crítica y reinicio
+            self._send_critical_alert(f"Fallo crítico de conexión tras {max_retries} intentos: {func.__name__}")
+            os.execv(sys.executable, ['python'] + sys.argv)
+        return wrapper
+    return decorator
+
 class TradingSystem:
     def __init__(self):
         # Configurar logging
@@ -62,6 +82,26 @@ class TradingSystem:
             },
             'last_update': datetime.now()
         }
+        
+        self._start_heartbeat()
+    
+    def _start_heartbeat(self):
+        def heartbeat():
+            while self.running:
+                try:
+                    msg = f"✅ Heartbeat: Bot activo {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                    self.telegram_bot.send_message(chat_id=self.config['telegram_chat_id'], text=msg)
+                except Exception as e:
+                    self.logger.error(f"Error enviando heartbeat: {str(e)}")
+                time.sleep(600)  # Cada 10 minutos
+        t = threading.Thread(target=heartbeat, daemon=True)
+        t.start()
+    
+    def _send_critical_alert(self, message):
+        try:
+            self.telegram_bot.send_message(chat_id=self.config['telegram_chat_id'], text=f"🚨 CRITICAL: {message}")
+        except Exception as e:
+            self.logger.error(f"Error enviando alerta crítica: {str(e)}")
     
     def _load_config(self) -> dict:
         """Carga configuración del sistema"""
@@ -372,14 +412,11 @@ class TradingSystem:
         except Exception as e:
             self.logger.error(f"Error cerrando trade: {str(e)}")
     
+    @auto_reconnect(max_retries=5)
     def _get_account_balance(self) -> float:
         """Obtiene balance de la cuenta"""
-        try:
-            balance = self.exchange.fetch_balance()
-            return float(balance['USDT']['free'])
-        except Exception as e:
-            self.logger.error(f"Error obteniendo balance: {str(e)}")
-            return 0.0
+        balance = self.exchange.fetch_balance()
+        return float(balance['USDT']['free'])
     
     def _should_optimize(self) -> bool:
         """Determina si es necesario optimizar"""
