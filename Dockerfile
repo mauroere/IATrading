@@ -1,5 +1,5 @@
 # Usar una imagen base de Python
-FROM python:3.11-slim
+FROM python:3.10-slim
 
 # Instalar dependencias del sistema necesarias para compilar TA-Lib y otras librerías
 RUN apt-get update && apt-get install -y \
