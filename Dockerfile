@@ -14,6 +14,8 @@ RUN apt-get update && apt-get install -y \
     automake \
     pkg-config \
     git \
+    libta-lib0 \
+    libta-lib0-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Descargar, compilar e instalar TA-Lib

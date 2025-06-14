@@ -15,4 +15,5 @@ xgboost==2.0.3
 schedule==1.2.1
 matplotlib==3.8.4
 seaborn==0.13.2
-joblib==1.4.2 
+joblib==1.4.2
+TA-Lib>=0.4.28 
