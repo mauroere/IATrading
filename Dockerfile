@@ -1,22 +1,31 @@
 # Usar una imagen base de Python
 FROM python:3.11-slim
 
-# Instalar dependencias del sistema
+# Instalar dependencias del sistema necesarias para compilar TA-Lib y otras librerías
 RUN apt-get update && apt-get install -y \
     build-essential \
+    gcc \
+    g++ \
+    make \
+    wget \
     curl \
-    software-properties-common \
+    libtool \
+    autoconf \
+    automake \
+    pkg-config \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Instalar TA-Lib
-RUN curl -L http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz | tar xz \
-    && cd ta-lib/ \
-    && ./configure --prefix=/usr \
-    && make \
-    && make install \
-    && cd .. \
-    && rm -rf ta-lib/
+# Descargar, compilar e instalar TA-Lib
+RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz \
+    && tar -xzf ta-lib-0.4.0-src.tar.gz \
+    && cd ta-lib && ./configure --prefix=/usr && make && make install \
+    && cd .. && rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
+
+# Exportar rutas para el linker y compilador
+ENV LD_LIBRARY_PATH="/usr/local/lib:${LD_LIBRARY_PATH}"
+ENV TA_LIBRARY_PATH="/usr/local/lib"
+ENV TA_INCLUDE_PATH="/usr/local/include"
 
 # Establecer el directorio de trabajo
 WORKDIR /app
@@ -30,8 +39,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copiar el código fuente
 COPY . .
 
-# Exponer el puerto
+# Exponer el puerto para Streamlit
 EXPOSE 8501
 
-# Comando para ejecutar la aplicación
+# Comando para ejecutar la aplicación (ajusta según el servicio)
 CMD streamlit run dashboard.py --server.port $PORT --server.address 0.0.0.0 
