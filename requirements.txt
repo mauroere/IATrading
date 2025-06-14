@@ -10,6 +10,10 @@ tensorflow==2.15.0
 python-telegram-bot==20.8
 psutil==5.9.8
 requests==2.31.0
-python-dotenv==1.0.1 
+python-dotenv==1.0.1
 xgboost==2.0.3
-schedule==1.2.1 
+schedule==1.2.1
+matplotlib==3.8.4
+seaborn==0.13.2
+yaml==6.0.1
+joblib==1.4.2 
