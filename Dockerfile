@@ -15,11 +15,9 @@ RUN apt-get update --fix-missing && \
     automake \
     pkg-config \
     git \
-    libta-lib0 \
-    libta-lib0-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Descargar, compilar e instalar TA-Lib (opcional, pero robusto)
+# Descargar, compilar e instalar TA-Lib (esto es lo importante)
 RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz \
     && tar -xzf ta-lib-0.4.0-src.tar.gz \
     && cd ta-lib && ./configure --prefix=/usr && make && make install \
