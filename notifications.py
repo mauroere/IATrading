@@ -1,5 +1,4 @@
 import telegram
-from telegram.ext import Updater
 from config import API_CONFIG
 import logging
 
@@ -8,8 +7,6 @@ class TelegramNotifier:
         self.bot_token = API_CONFIG['telegram_bot_token']
         self.chat_id = API_CONFIG['telegram_chat_id']
         self.bot = telegram.Bot(token=self.bot_token)
-        self.updater = Updater(token=self.bot_token, use_context=True)
-        self.dispatcher = self.updater.dispatcher
         self._setup_logging()
 
     def _setup_logging(self):
@@ -55,7 +52,7 @@ class TelegramNotifier:
         await self.send_message(message)
 
     def start(self):
-        self.updater.start_polling()
+        pass  # No longer needed
 
     def stop(self):
-        self.updater.stop() 
+        pass  # No longer needed 
