@@ -1,8 +1,9 @@
 # Usar una imagen base de Python
-FROM python:3.10-slim
+FROM python:3.10-bullseye
 
-# Instalar dependencias del sistema necesarias para compilar TA-Lib y otras librerías
-RUN apt-get update && apt-get install -y \
+# Instala dependencias del sistema necesarias para compilar TA-Lib y otras librerías
+RUN apt-get update --fix-missing && \
+    apt-get install -y \
     build-essential \
     gcc \
     g++ \
@@ -18,7 +19,7 @@ RUN apt-get update && apt-get install -y \
     libta-lib0-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Descargar, compilar e instalar TA-Lib
+# Descargar, compilar e instalar TA-Lib (opcional, pero robusto)
 RUN wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz \
     && tar -xzf ta-lib-0.4.0-src.tar.gz \
     && cd ta-lib && ./configure --prefix=/usr && make && make install \
